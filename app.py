@@ -13,7 +13,7 @@ api_key = st.secrets.get("GEMINI_API_KEY")
 
 if api_key:
     genai.configure(api_key=api_key)
-    # 모델 설정을 가장 기본형으로 변경
+    # 모델 설정을 v1 기반 안정화 버전으로 고정
     model = genai.GenerativeModel('gemini-1.5-flash')
 else:
     st.error("Secrets에 GEMINI_API_KEY를 넣어줘!")
@@ -54,7 +54,7 @@ if prompt := st.chat_input("규정에 대해 물어보세요!"):
             st.error(rules_text)
         else:
             try:
-                # 가장 정석적인 호출 방식
+                # 가장 정석적인 generate_content 호출 (버전 자동 선택)
                 response = model.generate_content(
                     f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 답변해줘.\n\n[규정]\n{rules_text}\n\n[질문]\n{prompt}"
                 )
@@ -63,6 +63,7 @@ if prompt := st.chat_input("규정에 대해 물어보세요!"):
                     st.markdown(response.text)
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
                 else:
-                    st.error("구글 API가 빈 답변을 보냈어.")
+                    st.error("구글 API가 답변을 생성하지 못했습니다. (Safety filters 등)")
             except Exception as e:
+                # 에러 발생 시 로그 상세 출력
                 st.error(f"구글 API 에러 발생: {str(e)}")
