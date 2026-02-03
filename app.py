@@ -2,67 +2,61 @@ import streamlit as st
 import google.generativeai as genai
 from PyPDF2 import PdfReader
 
-# 1. API 설정 및 모델 로드 (가장 호환성 높은 명칭 사용)
-def initial_setup():
-    try:
-        api_key = st.secrets["GEMINI_API_KEY"]
-        genai.configure(api_key=api_key)
-        # 1.5-flash가 에러나면 가장 기본인 'gemini-pro'가 정답!
-        return genai.GenerativeModel('gemini-pro')
-    except Exception as e:
-        st.error(f"⚠️ 설정 오류: {e}")
-        return None
+# 1. 페이지 설정
+st.set_page_config(page_title="송월 사내 규정 챗봇", layout="centered")
 
-# 2. PDF 읽기 함수
+# 2. API 설정 및 모델 기강 잡기
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=api_key)
+    # 최신 라이브러리에서는 'models/'를 붙이는 게 정석이야
+    model = genai.GenerativeModel('models/gemini-1.5-flash')
+except Exception as e:
+    st.error(f"🚨 설정 에러: {e}")
+    st.stop()
+
+# 3. PDF 로드 (캐싱)
 @st.cache_resource
-def load_pdf_data():
+def load_rules():
     try:
         reader = PdfReader("rules.pdf")
         text = ""
         for page in reader.pages:
-            content = page.extract_text()
-            if content:
-                text += content
+            text += page.extract_text()
         return text
     except Exception as e:
-        st.error(f"⚠️ PDF 파일('rules.pdf') 확인 필요: {e}")
         return None
 
-# 앱 시작
-model = initial_setup()
-pdf_content = load_pdf_data()
+rules_text = load_rules()
 
-st.title("🏢 사내 규정 챗봇")
+st.title("🏢 송월 사내 규정 챗봇")
 
-if not model or not pdf_content:
-    st.warning("설정 또는 PDF 파일 로드 중 문제가 발생했습니다.")
+if not rules_text:
+    st.error("🚨 'rules.pdf' 파일을 찾을 수 없어! 깃허브에 잘 올라가 있는지 확인해줘.")
     st.stop()
 
-# 3. 채팅 세션 관리
+# 4. 채팅 세션 관리
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        st.write(message["content"])
 
-# 4. 답변 생성
-if prompt := st.chat_input("질문을 입력하세요"):
+# 5. 질문 답변
+if prompt := st.chat_input("규정에 대해 물어보세요!"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.write(prompt)
 
     with st.chat_message("assistant"):
         try:
-            # 문서 내용과 질문 결합
-            full_prompt = f"당신은 사내 규정 전문가입니다. 아래 내용을 바탕으로만 답변하세요.\n\n내용:\n{pdf_content}\n\n질문: {prompt}"
+            # 럭키비키하게 답변 생성
+            full_prompt = f"너는 사내 규정 전문가야. 아래 내용을 바탕으로 답변해줘:\n\n{rules_text}\n\n질문: {prompt}"
             response = model.generate_content(full_prompt)
             
-            if response.text:
-                st.markdown(response.text)
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
-            else:
-                st.error("AI가 답변을 생성하지 못했습니다.")
+            st.write(response.text)
+            st.session_state.messages.append({"role": "assistant", "content": response.text})
         except Exception as e:
             st.error(f"❌ 최종 에러 발생: {e}")
-            st.info("이 에러가 계속되면 구글 AI 스튜디오에서 API 키를 새로 발급받는 것을 추천합니다.")
+            st.info("이 에러가 뜨면 'Manage app'에서 'Reboot'을 꼭 눌러줘!")
