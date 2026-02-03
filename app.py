@@ -21,7 +21,7 @@ rules_text = load_rules()
 # 3. UI 구성
 st.title("🏢 송월 사내 규정 챗봇")
 
-# API 키 확인 (Secrets에서 가져오기)
+# API 키 확인
 if "GEMINI_API_KEY" not in st.secrets:
     st.error("Secrets에 GEMINI_API_KEY를 설정해주세요!")
     st.stop()
@@ -37,7 +37,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 4. 질문 답변 로직 (생 호출 버전)
+# 4. 질문 답변 로직
 if prompt := st.chat_input("규정에 대해 물어보세요!"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -48,11 +48,8 @@ if prompt := st.chat_input("규정에 대해 물어보세요!"):
             st.error("rules.pdf 파일을 읽지 못했습니다.")
         else:
             try:
-                # API 호출 주소 및 헤더 설정
                 url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
                 headers = {'Content-Type': 'application/json'}
-                
-                # 프롬프트 구성
                 payload = {
                     "contents": [{
                         "parts": [{
@@ -61,7 +58,6 @@ if prompt := st.chat_input("규정에 대해 물어보세요!"):
                     }]
                 }
                 
-                # POST 요청 전송
                 response = requests.post(url, headers=headers, data=json.dumps(payload))
                 result = response.json()
                 
@@ -70,4 +66,8 @@ if prompt := st.chat_input("규정에 대해 물어보세요!"):
                     st.markdown(answer)
                     st.session_state.messages.append({"role": "assistant", "content": answer})
                 else:
-                    st.error(f"API 오류: {result.get('error', {}).get('message
+                    error_msg = result.get('error', {}).get('message', '알 수 없는 에러')
+                    st.error(f"API 오류: {error_msg}")
+            except Exception as e:
+                st.error(f"❌ 연결 실패: {e}")
+# --- 코드 마지막줄 ---
