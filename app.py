@@ -6,7 +6,7 @@ from PyPDF2 import PdfReader
 st.set_page_config(page_title="송월 사내 규정 챗봇", icon="🏢")
 
 # 2. 모델 및 데이터 로드
-MODEL_NAME = "gemini-2.0-flash"  # 형 키에 맞춰서 2.0으로 기강 잡음
+MODEL_NAME = "gemini-2.0-flash"
 
 @st.cache_resource
 def load_rules():
@@ -40,7 +40,7 @@ for message in st.session_state.messages:
 # 4. 질문 입력 처리 (채팅창 입력 OR 버튼 클릭)
 prompt = st.chat_input("규정에 대해 물어보세요!")
 
-# 버튼 클릭 시 prompt를 업데이트
+# 버튼 클릭 시 prompt 업데이트
 if st.session_state.clicked_query:
     prompt = st.session_state.clicked_query
     st.session_state.clicked_query = None
@@ -54,8 +54,22 @@ if prompt:
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={api_key}"
             
-            # 지시사항: 답변 뒤에 반드시 [Q: 질문] 형식으로 추천 질문을 달라고 함
-            instruction = (
-                f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 답변해줘.\n\n"
-                f"[규정]\n{rules_text}\n\n"
-                "답변이 끝나면 반드시 사용자가 이
+            # [기강잡기] 줄바꿈 에러 방지를 위해 명령어를 한 줄로 정리
+            instruction = f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 답변해줘. [규정] {rules_text} 답변이 끝나면 반드시 사용자가 이어서 물어볼 법한 연관 질문 3개를 추출해서 [Q: 질문내용] 형식으로 줄바꿈해서 적어줘."
+            
+            payload = {
+                "contents": [{
+                    "parts": [{"text": f"{instruction} 질문: {prompt}"}]
+                }]
+            }
+            
+            res = requests.post(url, json=payload)
+            res_json = res.json()
+            
+            if "candidates" in res_json:
+                full_response = res_json['candidates'][0]['content']['parts'][0]['text']
+                
+                # 메인 답변과 추천 질문 분리
+                if "[Q:" in full_response:
+                    parts = full_response.split("[Q:")
+                    main_
