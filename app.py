@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 from PyPDF2 import PdfReader
 
-# 1. 모델 설정 (무조건 2.5 Flash 전제)
+# 1. 모델 설정 (기본 전제: Gemini 2.5 Flash)
 MODEL_NAME = "gemini-2.5-flash"
 
 @st.cache_resource
@@ -49,7 +49,8 @@ if prompt:
     with st.chat_message("assistant"):
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={api_key}"
-            instruction = f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 답변해줘. [규정] {rules_text} 답변 후에는 반드시 사용자가 궁금해할 법한 연관 질문 3개를 [Q: 질문] 형식으로 적어줘."
+            # 명령어를 한 줄로 정리해서 줄바꿈 에러 원천 차단
+            instruction = f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 답변해줘. [규정] {rules_text} 답변 후에는 반드시 연관 질문 3개를 [Q: 질문] 형식으로 적어줘."
             
             payload = {
                 "contents": [{"parts": [{"text": f"{instruction} 질문: {prompt}"}]}]
@@ -61,6 +62,7 @@ if prompt:
             if "candidates" in res_json:
                 full_response = res_json['candidates'][0]['content']['parts'][0]['text']
                 
+                # 답변과 파생 질문 분리
                 if "[Q:" in full_response:
                     main_answer = full_response.split("[Q:")[0].strip()
                     suggestions = [p.split("]")[0].strip() for p in full_response.split("[Q:")[1:]]
@@ -77,10 +79,4 @@ if prompt:
                     cols = st.columns(len(suggestions))
                     for i, sug in enumerate(suggestions):
                         with cols[i]:
-                            # 여기서 들여쓰기 기강 잡음!
-                            st.button(sug, on_click=handle_click, args=(sug,), key=f"btn_{len(st.session_state.messages)}_{i}")
-            else:
-                st.error("답변 생성 실패. Quota 초과나 API 설정을 확인해봐!")
-                st.json(res_json)
-        except Exception as e:
-            st.error(f"실행
+                            st.button(sug, on_click=handle_click, args=(sug,), key=f"btn_{len(
