@@ -1,38 +1,68 @@
 import streamlit as st
-import requests
+import google.generativeai as genai
 from PyPDF2 import PdfReader
 
-# 1. 제목부터 띄우기 (이게 안 나오면 서버 문제임)
-st.title("🏢 송월 사내 규정 챗봇")
+# 1. 페이지 설정 (최상단)
+st.set_page_config(page_title="송월 사내 규정 챗봇", icon="🏢")
 
-# 2. PDF 읽기 (에러 방지용 try-except)
-def get_rules():
-    try:
-        reader = PdfReader("rules.pdf")
-        return "".join([p.extract_text() for p in reader.pages])
-    except:
-        return "PDF를 찾을 수 없습니다."
-
-rules = get_rules()
-
-# 3. API 키 체크
+# 2. API 키 및 모델 설정
 api_key = st.secrets.get("GEMINI_API_KEY")
 
-if not api_key:
-    st.warning("Secrets에 API 키가 없습니다.")
+if api_key:
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    st.error("Secrets에 GEMINI_API_KEY를 넣어줘!")
     st.stop()
 
-# 4. 채팅창
-if prompt := st.chat_input("질문하세요"):
-    st.chat_message("user").write(prompt)
-    
-    # 직접 호출
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
-    payload = {"contents": [{"parts": [{"text": f"규정: {rules}\n\n질문: {prompt}"}]}]}
-    
+# 3. PDF 로드 함수 (캐싱)
+@st.cache_resource
+def load_rules():
     try:
-        res = requests.post(url, json=payload)
-        ans = res.json()['candidates'][0]['content']['parts'][0]['text']
-        st.chat_message("assistant").write(ans)
+        reader = PdfReader("rules.pdf")
+        text = "".join([page.extract_text() for page in reader.pages])
+        return text
     except Exception as e:
-        st.error(f"에러: {e}")
+        return f"PDF 로드 실패: {str(e)}"
+
+rules_text = load_rules()
+
+# 4. UI 구성
+st.title("🏢 송월 사내 규정 챗봇")
+st.info("7800X3D 유저를 위한 정밀 답변 모드 ON 🚀")
+
+# 채팅 세션 관리
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# 5. 질문 답변 로직
+if prompt := st.chat_input("규정에 대해 물어보세요!"):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant"):
+        if "로드 실패" in rules_text:
+            st.error(rules_text)
+        else:
+            try:
+                # 구글 라이브러리로 안전하게 호출
+                response = model.generate_content(
+                    f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 친절하게 답변해줘.\n\n[규정]\n{rules_text}\n\n[질문]\n{prompt}"
+                )
+                
+                if response.text:
+                    st.markdown(response.text)
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                else:
+                    st.error("답변을 생성하지 못했습니다.")
+                    
+            except Exception as e:
+                # 여기서 에러나면 100% 키 권한 문제임
+                st.error(f"구글 AI 에러 발생: {str(e)}")
+                if "API_KEY_INVALID" in str(e):
+                    st.warning("키가 유효하지 않대. Secrets에 복사할 때 공백이 들어갔는지 봐줘!")
