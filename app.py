@@ -2,69 +2,58 @@ import streamlit as st
 import google.generativeai as genai
 from PyPDF2 import PdfReader
 
-# 1. 페이지 설정 (가장 먼저 호출!)
-st.set_page_config(page_title="사내 규정 챗봇", icon="🏢")
-
-# 2. API 설정
+# 1. API 설정 (페이지 설정 코드 생략해서 에러 원천 차단)
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
 except Exception as e:
-    st.error(f"🚨 API 키 설정 에러! Secrets를 확인하세요. ({e})")
+    st.error(f"API 키 확인 필요: {e}")
     st.stop()
 
-# 3. PDF 읽기 함수 (캐싱 적용)
+# 2. PDF 읽기 (캐싱)
 @st.cache_resource
-def load_data():
+def load_pdf_data():
     try:
-        # 파일명이 반드시 rules.pdf 여야 함!
         reader = PdfReader("rules.pdf")
-        full_text = ""
+        text = ""
         for page in reader.pages:
-            full_text += page.extract_text()
-        return full_text
+            text += page.extract_text()
+        return text
     except Exception as e:
-        st.error(f"🚨 PDF 읽기 실패! 'rules.pdf' 파일이 있는지 확인하세요. ({e})")
         return None
 
-# 데이터 로드
-data = load_data()
+data = load_pdf_data()
 
+# 3. UI 구성
 st.title("🏢 사내 규정 챗봇")
-st.info("사내 규정 문서를 바탕으로 Gemini AI가 답변합니다.")
 
-if data:
-    # 4. 채팅 세션 관리
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+if data is None:
+    st.error("🚨 'rules.pdf' 파일을 찾을 수 없습니다! 깃허브에 파일이 있는지 확인해주세요.")
+    st.stop()
 
-    # 이전 대화 출력
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+# 채팅 기록 초기화
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    # 5. 사용자 입력 및 답변 생성
-    if prompt := st.chat_input("질문을 입력하세요 (예: 연차 규정 알려줘)"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+# 대화 내용 표시
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-        with st.chat_message("assistant"):
-            try:
-                # 404 에러 방지를 위해 가장 범용적인 모델명 사용
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                
-                # 프롬프트 구성
-                full_prompt = f"너는 회사의 인사팀 직원이야. 아래의 사내 규정 내용을 바탕으로 질문에 친절하게 답해줘.\n\n[규정 내용]\n{data}\n\n[질문]\n{prompt}"
-                
-                response = model.generate_content(full_prompt)
-                
-                if response.text:
-                    st.markdown(response.text)
-                    st.session_state.messages.append({"role": "assistant", "content": response.text})
-                else:
-                    st.warning("AI가 답변을 생성하지 못했습니다.")
-            except Exception as e:
-                st.error(f"❌ AI 답변 생성 중 오류 발생: {e}")
-else:
-    st.warning("PDF 데이터를 불러오지 못했습니다. 깃허브에 'rules.pdf'가 있는지 확인해주세요.")
+# 4. 질문 입력 및 답변
+if prompt := st.chat_input("질문을 입력하세요"):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant"):
+        try:
+            # 모델 명칭을 가장 안전한 'gemini-1.5-flash'로 고정
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            full_prompt = f"아래 규정 내용을 바탕으로 답해줘:\n\n{data}\n\n질문: {prompt}"
+            
+            response = model.generate_content(full_prompt)
+            st.markdown(response.text)
+            st.session_state.messages.append({"role": "assistant", "content": response.text})
+        except Exception as e:
+            st.error(f"AI 오류 발생: {e}")
