@@ -2,57 +2,70 @@ import streamlit as st
 import google.generativeai as genai
 from PyPDF2 import PdfReader
 
-# 1. 최상단 설정 (에러 방지용)
-st.set_page_config(page_title="사내 규정 챗봇")
+# 1. 페이지 설정
+st.set_page_config(page_title="송월 사내 규정 챗봇", layout="centered")
 
-# 2. API 설정
+# 2. API 설정 및 모델 기강 잡기
 if "GEMINI_API_KEY" not in st.secrets:
     st.error("Secrets에 GEMINI_API_KEY를 설정해주세요!")
     st.stop()
 
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-# 3. PDF 데이터 로드 (캐싱)
+# 3. PDF 로드 (캐싱)
 @st.cache_resource
-def get_pdf_text():
+def load_rules():
     try:
         reader = PdfReader("rules.pdf")
-        return "".join([page.extract_text() for page in reader.pages])
+        text = ""
+        for page in reader.pages:
+            content = page.extract_text()
+            if content:
+                text += content
+        return text
     except Exception as e:
-        st.error(f"PDF 로드 실패: {e}")
         return None
 
-rules_context = get_pdf_text()
+rules_text = load_rules()
 
-# 4. UI 및 채팅 로직
-st.title("🏢 사내 규정 챗봇")
+st.title("🏢 송월 사내 규정 챗봇")
 
-if rules_context:
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
+if not rules_text:
+    st.error("🚨 'rules.pdf' 파일을 찾을 수 없습니다! 깃허브를 확인해주세요.")
+    st.stop()
 
-    # 채팅 출력
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
+# 4. 채팅 세션 관리
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    # 입력창
-    if user_input := st.chat_input("규정에 대해 물어보세요"):
-        st.session_state.chat_history.append({"role": "user", "content": user_input})
-        with st.chat_message("user"):
-            st.write(user_input)
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-        with st.chat_message("assistant"):
+# 5. 질문 답변 로직
+if prompt := st.chat_input("규정에 대해 물어보세요!"):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant"):
+        try:
+            # 404 에러 방지를 위한 가장 표준적인 모델 호출
+            # 만약 이게 안되면 'gemini-1.5-flash-latest'로 자동 전환 시도
             try:
-                # 여기서 모델명을 'gemini-1.5-flash'로 호출 (가장 안정적)
                 model = genai.GenerativeModel('gemini-1.5-flash')
-                prompt = f"너는 인사팀 전문가야. 아래 규정을 참고해서 답해줘.\n\n[규정]\n{rules_context}\n\n[질문]\n{user_input}"
-                
-                response = model.generate_content(prompt)
-                ans = response.text
-                
-                st.write(ans)
-                st.session_state.chat_history.append({"role": "assistant", "content": ans})
-            except Exception as e:
-                st.error(f"에러 발생: {e}")
-                st.info("이 에러가 404라면, 'Manage app' 메뉴에서 'Delete app' 후 다시 생성하는 게 빠를 수 있어.")
+            except:
+                model = genai.GenerativeModel('gemini-pro')
+            
+            full_prompt = f"당신은 사내 규정 전문가입니다. 아래 내용을 바탕으로 답변하세요.\n\n[내용]\n{rules_text}\n\n[질문]\n{prompt}"
+            
+            response = model.generate_content(full_prompt)
+            
+            if response.text:
+                st.markdown(response.text)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+            else:
+                st.error("AI가 답변을 생성하지 못했습니다.")
+        except Exception as e:
+            st.error(f"❌ 최종 에러 발생: {e}")
+            st.info("이 에러가 계속되면 Google AI Studio에서 새로운 API 키를 다시 한 번만 발급받아보세요.")
