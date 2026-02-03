@@ -2,21 +2,21 @@ import streamlit as st
 import google.generativeai as genai
 from PyPDF2 import PdfReader
 
-# 1. 페이지 설정 (웹사이트 제목)
-st.set_page_config(page_title="송월 규정 챗봇", page_icon="🤖")
+# 1. 페이지 설정
+st.set_page_config(page_title="사내 규정 챗봇", icon="🏢")
 st.title("🏢 사내 규정 무엇이든 물어보세요!")
-st.info("이 챗봇은 사내 규정 PDF를 바탕으로 답변합니다.")
 
-# 2. 보안을 위해 설정에서 API 키를 가져옴
-if "GEMINI_API_KEY" not in st.secrets:
-    st.error("Streamlit 설정에서 API 키를 등록해주세요!")
+# 2. API 키 설정 (Secrets에서 가져오기)
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=api_key)
+except Exception:
+    st.error("API 키 설정이 잘못되었습니다. Secrets를 확인해주세요.")
     st.stop()
 
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-
-# 3. PDF 파일 읽기 함수 (파일 이름은 무조건 rules.pdf로!)
+# 3. PDF 파일 읽기 함수
 @st.cache_resource
-def load_pdf_content():
+def load_pdf():
     try:
         reader = PdfReader("rules.pdf")
         text = ""
@@ -24,34 +24,36 @@ def load_pdf_content():
             text += page.extract_text()
         return text
     except Exception as e:
-        st.error(f"rules.pdf 파일을 찾을 수 없거나 읽을 수 없습니다: {e}")
+        st.error(f"PDF 파일을 읽을 수 없습니다: {e}")
         return None
 
-pdf_text = load_pdf_content()
-model = genai.GenerativeModel("gemini-1.5-flash")
+pdf_text = load_pdf()
 
-# 4. 채팅 메시지 저장용 세션 초기화
+# 4. 챗봇 인터페이스
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# 기존 대화 표시
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-# 5. 채팅창 입력 로직
-if prompt := st.chat_input("연차 규정이나 복지에 대해 물어보세요!"):
-    # 사용자 질문 저장 및 표시
+if prompt := st.chat_input("질문을 입력하세요"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # AI 답변 생성
     with st.chat_message("assistant"):
-        with st.spinner("규정을 확인하는 중..."):
-            # PDF 내용과 질문을 섞어서 AI에게 전달
-            full_prompt = f"당신은 사내 규정 안내 챗봇입니다. 아래 제공된 규정 내용을 바탕으로만 답변하세요. 모르는 내용은 모른다고 하세요.\n\n[규정 내용]\n{pdf_text}\n\n[사용자 질문]\n{prompt}"
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            # PDF 내용을 프롬프트에 포함
+            full_prompt = f"다음은 사내 규정 문서 내용이야:\n\n{pdf_text}\n\n위 내용을 바탕으로 질문에 답해줘: {prompt}"
+            
             response = model.generate_content(full_prompt)
-            st.markdown(response.text)
-    
-    st.session_state.messages.append({"role": "assistant", "content": response.text})
+            
+            if response.text:
+                st.markdown(response.text)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+            else:
+                st.error("AI가 답변을 생성하지 못했습니다.")
+        except Exception as e:
+            st.error(f"에러가 발생했습니다: {e}")
