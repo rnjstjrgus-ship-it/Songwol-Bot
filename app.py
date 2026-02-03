@@ -1,11 +1,9 @@
 import streamlit as st
 import requests
+import json
 from PyPDF2 import PdfReader
 
-# [드레스업 1] 페이지 설정 - 브라우저 탭에 귀여운 아이콘과 이름 표시
-st.set_page_config(page_title="송월 규정 요정", page_icon="🧚", layout="centered")
-
-# 1. 모델 설정 (Gemini 2.5 Flash 전제)
+# 1. 모델 설정 (무조건 2.5 Flash)
 MODEL_NAME = "gemini-2.5-flash"
 
 @st.cache_resource
@@ -20,9 +18,9 @@ def load_rules():
 api_key = st.secrets.get("GEMINI_API_KEY")
 rules_text = load_rules()
 
-# [드레스업 2] 상단 꾸미기
-st.write("### 🎀 송월 사내 규정 요정")
-st.caption(f"✨ 최신형 {MODEL_NAME} 엔진이 형을 도와줄 거야!")
+# 2. UI 구성 (귀염 뽀짝 유지)
+st.title("🎀 송월 규정 요정 (Speed Edition)")
+st.caption(f"⚡ {MODEL_NAME} 스트리밍 모드 가동 중")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -32,15 +30,14 @@ if "clicked_query" not in st.session_state:
 def handle_click(query):
     st.session_state.clicked_query = query
 
-# [드레스업 3] 말풍선에 귀여운 아이콘 넣기
+# 대화 내역 출력
 for message in st.session_state.messages:
-    # 유저는 '👤', 봇은 '🤖' 또는 '🧚' 아이콘 사용
     avatar = "👤" if message["role"] == "user" else "🧚"
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
 
 # 3. 질문 입력 처리
-prompt = st.chat_input("궁금한 규정을 말해줘! (예: 휴가, 복지)")
+prompt = st.chat_input("궁금한 규정을 물어봐!")
 
 if st.session_state.clicked_query:
     prompt = st.session_state.clicked_query
@@ -52,40 +49,55 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="🧚"):
+        # 스트리밍을 위한 빈 공간 생성
+        message_placeholder = st.empty()
+        full_response = ""
+        
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={api_key}"
-            instruction = f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 친절하고 귀엽게 답변해줘. [규정] {rules_text} 답변 후에는 반드시 연관 질문 3개를 [Q: 질문] 형식으로 적어줘."
+            # 스트리밍 API 호출 주소 (streamGenerateContent)
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:streamGenerateContent?key={api_key}"
+            
+            # [기강잡기] 심플 답변 + 파생 질문 형식 지정
+            instruction = (
+                f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 답변하되, "
+                f"절대 원문을 그대로 나열하지 말고 사용자가 한눈에 알 수 있게 핵심만 요약해서 심플하게 답변해줘. "
+                f"답변 끝에는 반드시 [Q: 질문] 형식으로 연관 질문 3개를 달아줘. \n\n[규정]\n{rules_text}"
+            )
             
             payload = {
-                "contents": [{"parts": [{"text": f"{instruction} 질문: {prompt}"}]}]
+                "contents": [{"parts": [{"text": f"{instruction}\n\n질문: {prompt}"}]}]
             }
             
-            res = requests.post(url, json=payload)
-            res_json = res.json()
+            # 스트리밍 요청 처리
+            response = requests.post(url, json=payload, stream=True)
             
-            if "candidates" in res_json:
-                full_response = res_json['candidates'][0]['content']['parts'][0]['text']
-                
-                if "[Q:" in full_response:
-                    main_answer = full_response.split("[Q:")[0].strip()
-                    suggestions = [p.split("]")[0].strip() for p in full_response.split("[Q:")[1:]]
-                else:
-                    main_answer = full_response
-                    suggestions = []
+            for line in response.iter_lines():
+                if line:
+                    decoded_line = line.decode('utf-8').lstrip(" ,")
+                    # 구글 스트리밍 데이터 파싱 (SSE 방식과 유사)
+                    if decoded_line.startswith('{"candidates"'):
+                        data = json.loads(decoded_line)
+                        content = data['candidates'][0]['content']['parts'][0]['text']
+                        full_response += content
+                        # 중간 답변 표시 (연관 질문 제외하고 먼저 보여주기)
+                        display_text = full_response.split("[Q:")[0]
+                        message_placeholder.markdown(display_text + "▌")
 
-                st.markdown(main_answer)
-                st.session_state.messages.append({"role": "assistant", "content": main_answer})
+            # 최종 답변 확정
+            final_main_answer = full_response.split("[Q:")[0].strip()
+            message_placeholder.markdown(final_main_answer)
+            st.session_state.messages.append({"role": "assistant", "content": final_main_answer})
 
+            # 연관 질문 버튼 생성
+            if "[Q:" in full_response:
+                suggestions = [p.split("]")[0].strip() for p in full_response.split("[Q:")[1:]]
                 if suggestions:
                     st.write("---")
-                    st.caption("✨ 요런 건 어때? 눌러봐!")
-                    # [드레스업 4] 버튼 디자인 강조
+                    st.caption("✨ 요정의 추천 질문!")
                     cols = st.columns(len(suggestions))
                     for i, sug in enumerate(suggestions):
-                        btn_key = f"btn_{len(st.session_state.messages)}_{i}"
                         with cols[i]:
-                            st.button(f"🔍 {sug}", on_click=handle_click, args=(sug,), key=btn_key)
-            else:
-                st.error("힝... 답변 생성에 실패했어. 쿼터 확인해봐!")
+                            st.button(f"🔍 {sug}", on_click=handle_click, args=(sug,), key=f"btn_{len(st.session_state.messages)}_{i}")
+                            
         except Exception as e:
-            st.error(f"으악 에러 발생! : {str(e)}")
+            st.error(f"으악! 스트리밍 중 사고 발생: {str(e)}")
