@@ -49,7 +49,7 @@ if prompt:
     with st.chat_message("assistant"):
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={api_key}"
-            # 명령어를 한 줄로 정리해서 줄바꿈 에러 원천 차단
+            # 가독성을 위해 명령문을 한 줄로 정렬
             instruction = f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 답변해줘. [규정] {rules_text} 답변 후에는 반드시 연관 질문 3개를 [Q: 질문] 형식으로 적어줘."
             
             payload = {
@@ -78,5 +78,12 @@ if prompt:
                     st.caption("💡 이런 질문은 어떠세요?")
                     cols = st.columns(len(suggestions))
                     for i, sug in enumerate(suggestions):
+                        btn_key = f"btn_{len(st.session_state.messages)}_{i}"
                         with cols[i]:
-                            st.button(sug, on_click=handle_click, args=(sug,), key=f"btn_{len(
+                            # 괄호와 따옴표 기강 완벽하게 잡음
+                            st.button(sug, on_click=handle_click, args=(sug,), key=btn_key)
+            else:
+                st.error("답변 생성에 실패했어. API 설정을 확인해봐.")
+                st.json(res_json)
+        except Exception as e:
+            st.error(f"실행 중 에러 발생: {str(e)}")
