@@ -1,6 +1,5 @@
 import streamlit as st
 import requests
-import json
 import os
 from PyPDF2 import PdfReader
 
@@ -41,35 +40,4 @@ if "messages" not in st.session_state:
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-# ---------------- CHAT ----------------
-prompt = st.chat_input("규정에 대해 물어보세요!")
-
-if prompt:
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    with st.chat_message("assistant"):
-        with st.spinner("규정 확인 중..."):
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
-                headers = {"Content-Type": "application/json"}
-
-                payload = {
-                    "contents": [
-                        {
-                            "parts": [
-                                {
-                                    "text": f"""너는 회사 사내 규정 전문가야.
-아래 규정을 근거로만 답변하고, 없는 내용은 추측하지 마.
-
-[사내 규정]
-{rules_text}
-
-[질문]
-{prompt}
-"""
-                                }
+        st.markdown(ms
