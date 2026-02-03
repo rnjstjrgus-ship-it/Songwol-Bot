@@ -1,38 +1,31 @@
 import streamlit as st
-import google.generativeai as genai
+import requests
+import json
 from PyPDF2 import PdfReader
 
 # 1. 페이지 설정
-st.set_page_config(page_title="송월 사내 규정 챗봇", layout="centered")
+st.set_page_config(page_title="송월 사내 규정 챗봇", icon="🏢")
 
-# 2. API 설정 및 모델 기강 잡기
-if "GEMINI_API_KEY" not in st.secrets:
-    st.error("Secrets에 GEMINI_API_KEY를 설정해주세요!")
-    st.stop()
-
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-
-# 3. PDF 로드 (캐싱)
+# 2. PDF 로드 (캐싱)
 @st.cache_resource
 def load_rules():
     try:
         reader = PdfReader("rules.pdf")
-        text = ""
-        for page in reader.pages:
-            content = page.extract_text()
-            if content:
-                text += content
+        text = "".join([page.extract_text() for page in reader.pages])
         return text
     except Exception as e:
-        return None
+        return f"PDF 로드 실패: {e}"
 
 rules_text = load_rules()
 
 st.title("🏢 송월 사내 규정 챗봇")
 
-if not rules_text:
-    st.error("🚨 'rules.pdf' 파일을 찾을 수 없습니다! 깃허브를 확인해주세요.")
+# 3. API 키 확인
+if "GEMINI_API_KEY" not in st.secrets:
+    st.error("Secrets에 GEMINI_API_KEY를 넣어주세요!")
     st.stop()
+
+api_key = st.secrets["GEMINI_API_KEY"]
 
 # 4. 채팅 세션 관리
 if "messages" not in st.session_state:
@@ -42,30 +35,36 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. 질문 답변 로직
-if prompt := st.chat_input("규정에 대해 물어보세요!"):
+# 5. 질문 답변 (직접 API 호출 방식)
+if prompt := st.chat_input("규정에 대해 무엇이든 물어보세요!"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
         try:
-            # 404 에러 방지를 위한 가장 표준적인 모델 호출
-            # 만약 이게 안되면 'gemini-1.5-flash-latest'로 자동 전환 시도
-            try:
-                model = genai.GenerativeModel('gemini-1.5-flash')
-            except:
-                model = genai.GenerativeModel('gemini-pro')
+            # 구글 서버에 직접 요청 보내기 (v1beta가 아닌 v1 버전 강제 지정)
+            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
             
-            full_prompt = f"당신은 사내 규정 전문가입니다. 아래 내용을 바탕으로 답변하세요.\n\n[내용]\n{rules_text}\n\n[질문]\n{prompt}"
+            headers = {'Content-Type': 'application/json'}
+            payload = {
+                "contents": [{
+                    "parts": [{
+                        "text": f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 답변해줘.\n\n[규정]\n{rules_text}\n\n[질문]\n{prompt}"
+                    }]
+                }]
+            }
             
-            response = model.generate_content(full_prompt)
+            response = requests.post(url, headers=headers, data=json.dumps(payload))
+            result = response.json()
             
-            if response.text:
-                st.markdown(response.text)
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
+            # 답변 추출
+            if "candidates" in result:
+                answer = result['candidates'][0]['content']['parts'][0]['text']
+                st.markdown(answer)
+                st.session_state.messages.append({"role": "assistant", "content": answer})
             else:
-                st.error("AI가 답변을 생성하지 못했습니다.")
+                st.error(f"API 응답 에러: {result.get('error', {}).get('message', '알 수 없는 오류')}")
+                
         except Exception as e:
-            st.error(f"❌ 최종 에러 발생: {e}")
-            st.info("이 에러가 계속되면 Google AI Studio에서 새로운 API 키를 다시 한 번만 발급받아보세요.")
+            st.error(f"❌ 최종 연결 실패: {e}")
