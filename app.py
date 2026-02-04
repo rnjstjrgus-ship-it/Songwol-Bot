@@ -3,7 +3,7 @@ import requests
 import json
 from PyPDF2 import PdfReader
 
-# 1. 모델 설정 (형의 명령대로 2.5 Flash 고정!)
+# 1. 모델 설정 (형의 말대로 오직 2.5 Flash!)
 MODEL_NAME = "gemini-2.5-flash" 
 
 @st.cache_resource
@@ -51,14 +51,11 @@ if prompt:
     with st.chat_message("assistant", avatar="🧚"):
         with st.spinner(f"요정이 {MODEL_NAME}으로 규정 분석 중... ✨"):
             try:
-                # 2.5 Flash 호출용 v1beta URL
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={api_key}"
-                
                 instruction = (
                     f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 핵심만 요약해서 답변해줘. "
                     f"답변 끝에는 반드시 [Q: 질문] 형식으로 연관 질문 2개를 추가해줘. \n\n[규정]\n{rules_text}"
                 )
-                
                 payload = {"contents": [{"parts": [{"text": f"{instruction}\n\n질문: {prompt}"}]}]}
                 
                 response = requests.post(url, json=payload)
@@ -67,27 +64,9 @@ if prompt:
                     res_json = response.json()
                     if "candidates" in res_json:
                         full_res = res_json['candidates'][0]['content']['parts'][0]['text']
-                        
-                        # 답변과 추천 질문 분리
                         main_answer = full_res.split("[Q:")[0].strip()
                         st.markdown(main_answer)
                         st.session_state.messages.append({"role": "assistant", "content": main_answer})
                         
-                        # 추천 질문 버튼 생성
                         if "[Q:" in full_res:
-                            raw_sug = full_res.split("[Q:")[1:]
-                            sugs = [s.split("]")[0].strip() for s in raw_sug][:2]
-                            
-                            st.write("---")
-                            st.caption("✨ 요런 건 어때?")
-                            cols = st.columns(len(sugs))
-                            for i, s in enumerate(sugs):
-                                with cols[i]:
-                                    st.button(f"🔍 {s}", on_click=handle_click, args=(s,), key=f"btn_{len(st.session_state.messages)}_{i}")
-                
-                elif response.status_code == 429:
-                    st.warning("🚨 쿼터 초과! 구글이 잠깐 쉬래. 30초만 있다가 다시 해보자.")
-                else:
-                    st.error(f"🚨 에러 발생({response.status_code}): {response.text}")
-                    
-            except Exception
+                            raw_sug = full_res
