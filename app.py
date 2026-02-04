@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import json
+import re
 from PyPDF2 import PdfReader
 
 # 1. 모델 설정 (무조건 2.5 Flash)
@@ -20,7 +21,7 @@ rules_text = load_rules()
 
 # 2. UI 구성
 st.title("🎀 송월 규정 요정 (Light Edition)")
-st.caption(f"⚡ {MODEL_NAME} 최적화 모드 가동 중")
+st.caption(f"⚡ {MODEL_NAME} 스트리밍 모드 최적화")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -53,7 +54,7 @@ if prompt:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:streamGenerateContent?key={api_key}"
             instruction = (
                 f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 핵심만 요약해서 심플하게 답변해줘. "
-                f"답변 후 맨 마지막에만 [Q: 질문] 형식으로 연관 질문 '2개'만 추가해줘. \n\n[규정]\n{rules_text}"
+                f"원문을 길게 나열하지 마. 답변 후 맨 마지막에만 [Q: 질문] 형식으로 연관 질문 '2개'만 추가해줘. \n\n[규정]\n{rules_text}"
             )
             payload = {"contents": [{"parts": [{"text": f"{instruction}\n\n질문: {prompt}"}]}]}
             
@@ -63,19 +64,14 @@ if prompt:
             for line in response.iter_lines():
                 if line:
                     decoded = line.decode('utf-8').strip()
-                    # 스트리밍 응답에서 JSON 데이터만 추출
-                    if decoded.startswith('{'):
-                        try:
-                            data = json.loads(decoded)
-                            # 계층 구조를 타고 들어가서 텍스트만 추출
-                            if "candidates" in data:
-                                content = data['candidates'][0]['content']['parts'][0]['text']
-                                full_text += content
-                                # 질문 태그 전까지만 화면에 실시간으로 뿌려줌
-                                if "[Q:" not in full_text:
-                                    yield content
-                        except:
-                            continue
+                    # 정규표현식으로 "text": "내용" 부분만 안전하게 추출
+                    match = re.search(r'"text":\s*"(.*?)"', decoded)
+                    if match:
+                        content = match.group(1).encode().decode('unicode_escape')
+                        full_text += content
+                        # 질문 태그 전까지만 실시간으로 화면에 출력
+                        if "[Q:" not in full_text:
+                            yield content
             
             st.session_state.last_full_response = full_text
 
