@@ -3,8 +3,8 @@ import requests
 import json
 from PyPDF2 import PdfReader
 
-# 1. 모델 설정 (1.5 Flash - 안정성 최우선)
-MODEL_NAME = "gemini-1.5-flash" 
+# 1. 모델 설정 (형의 명령대로 2.5 Flash 고정!)
+MODEL_NAME = "gemini-2.5-flash" 
 
 @st.cache_resource
 def load_rules():
@@ -20,7 +20,7 @@ rules_text = load_rules()
 
 # 2. UI 구성
 st.title("🎀 송월 규정 요정")
-st.caption(f"⚡ 작동 엔진: {MODEL_NAME}")
+st.caption(f"⚡ Pure 2.5 Flash Engine 가동 중")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -49,9 +49,9 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="🧚"):
-        with st.spinner(f"요정이 답변을 준비 중이야... ✨"):
+        with st.spinner(f"요정이 {MODEL_NAME}으로 규정 분석 중... ✨"):
             try:
-                # API 호출 URL (v1beta)
+                # 2.5 Flash 호출용 v1beta URL
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={api_key}"
                 
                 instruction = (
@@ -73,22 +73,21 @@ if prompt:
                         st.markdown(main_answer)
                         st.session_state.messages.append({"role": "assistant", "content": main_answer})
                         
-                        # 추천 질문 버튼 생성 (여기 에러 완벽 수정!)
+                        # 추천 질문 버튼 생성
                         if "[Q:" in full_res:
                             raw_sug = full_res.split("[Q:")[1:]
                             sugs = [s.split("]")[0].strip() for s in raw_sug][:2]
                             
                             st.write("---")
                             st.caption("✨ 요런 건 어때?")
-                            cols = st.columns(len(sugs)) # 컬럼 생성 부분 수정
+                            cols = st.columns(len(sugs))
                             for i, s in enumerate(sugs):
                                 with cols[i]:
                                     st.button(f"🔍 {s}", on_click=handle_click, args=(s,), key=f"btn_{len(st.session_state.messages)}_{i}")
                 
                 elif response.status_code == 429:
-                    st.warning("🚨 1분 사용량 초과! 30초만 쉬었다가 다시 해줘.")
+                    st.warning("🚨 쿼터 초과! 구글이 잠깐 쉬래. 30초만 있다가 다시 해보자.")
                 else:
                     st.error(f"🚨 에러 발생({response.status_code}): {response.text}")
                     
-            except Exception as e:
-                st.error(f"시스템 오류: {str(e)}")
+            except Exception
