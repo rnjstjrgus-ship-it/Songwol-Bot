@@ -4,7 +4,7 @@ import json
 from PyPDF2 import PdfReader
 
 # 1. 모델 설정 (1.5 Flash로 안정성 확보)
-# 2.5 Flash가 429(쿼터초과)면 이 녀석이 구원투수야!
+# 만약 1.5도 404 뜨면 'gemini-1.5-flash-latest'로 아래 이름만 바꿔줘!
 MODEL_NAME = "gemini-1.5-flash" 
 
 @st.cache_resource
@@ -19,9 +19,9 @@ def load_rules():
 api_key = st.secrets.get("GEMINI_API_KEY")
 rules_text = load_rules()
 
-# 2. UI 구성
-st.title("🎀 송월 규정 요정 (1.5 Flash)")
-st.caption(f"⚡ 현재 엔진: {MODEL_NAME}")
+# 2. UI 구성 (귀염 뽀짝 유지)
+st.title("🎀 송월 규정 요정")
+st.caption(f"⚡ 현재 작동 엔진: {MODEL_NAME}")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -31,11 +31,13 @@ if "clicked_query" not in st.session_state:
 def handle_click(query):
     st.session_state.clicked_query = query
 
+# 대화 기록 출력
 for message in st.session_state.messages:
     avatar = "👤" if message["role"] == "user" else "🧚"
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
 
+# 3. 질문 처리
 prompt = st.chat_input("궁금한 규정을 물어봐!")
 
 if st.session_state.clicked_query:
@@ -48,41 +50,40 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="🧚"):
-        with st.spinner("요정이 1.5 엔진으로 답변 만드는 중... ✨"):
+        # 상태 메시지로 형을 안심시키기
+        with st.spinner(f"요정이 {MODEL_NAME} 엔진을 예열 중이야... ✨"):
             try:
-                # [중요] 404 방지를 위해 v1beta 경로를 명확히 지정
+                # [핵심] 404 방지를 위한 URL 구조 (v1beta 사용)
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={api_key}"
                 
                 instruction = (
-                    f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 핵심만 요약해서 답변해줘. "
-                    f"답변 끝에는 반드시 [Q: 질문] 형식으로 추천 질문 2개 달아줘. \n\n[규정]\n{rules_text}"
+                    f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 핵심만 요약해서 심플하게 답변해줘. "
+                    f"답변 끝에는 반드시 [Q: 질문] 형식으로 연관 질문 2개를 추가해줘. \n\n[규정]\n{rules_text}"
                 )
                 
                 payload = {"contents": [{"parts": [{"text": f"{instruction}\n\n질문: {prompt}"}]}]}
                 
                 response = requests.post(url, json=payload)
                 
-                # 404 에러나면 바로 알려주기
+                # 에러 코드별 맞춤 대응
                 if response.status_code == 404:
-                    st.error("🚨 헉, 또 404 에러야! 모델명을 'gemini-1.5-flash-latest'로 바꿔야 할 수도 있어.")
+                    st.error(f"🚨 아직도 404 에러네! 모델명을 'gemini-1.5-flash-latest'로 바꿔서 다시 시도해볼게.")
                 elif response.status_code == 429:
-                    st.error("🚨 1.5 엔진도 1분 사용량 초과래... 조금만 쉬자!")
-                else:
+                    st.warning("🚨 형, 구글이 1분당 사용량 초과래! 30초만 쉬었다가 다시 눌러줘.")
+                elif response.status_code == 200:
                     res_json = response.json()
                     if "candidates" in res_json:
                         full_res = res_json['candidates'][0]['content']['parts'][0]['text']
+                        
+                        # 답변과 버튼 분리
                         main_answer = full_res.split("[Q:")[0].strip()
                         st.markdown(main_answer)
                         st.session_state.messages.append({"role": "assistant", "content": main_answer})
                         
-                        # (추천 질문 버튼 로직은 동일)
                         if "[Q:" in full_res:
                             raw_sug = full_res.split("[Q:")[1:]
                             sugs = [s.split("]")[0].strip() for s in raw_sug][:2]
                             st.write("---")
+                            st.caption("✨ 요런 건 어때?")
                             cols = st.columns(2)
-                            for i, s in enumerate(sugs):
-                                with cols[i]:
-                                    st.button(f"🔍 {s}", on_click=handle_click, args=(s,), key=f"btn_{len(st.session_state.messages)}_{i}")
-            except Exception as e:
-                st.error(f"실행 오류: {str(e)}")
+                            for i, s in enumerate(
