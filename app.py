@@ -3,7 +3,7 @@ import requests
 import json
 from PyPDF2 import PdfReader
 
-# 1. 모델 설정 (형의 말대로 오직 2.5 Flash!)
+# 1. 모델 설정 (형의 명령대로 오직 2.5 Flash!)
 MODEL_NAME = "gemini-2.5-flash" 
 
 @st.cache_resource
@@ -69,4 +69,19 @@ if prompt:
                         st.session_state.messages.append({"role": "assistant", "content": main_answer})
                         
                         if "[Q:" in full_res:
-                            raw_sug = full_res
+                            raw_sug = full_res.split("[Q:")[1:]
+                            sugs = [s.split("]")[0].strip() for s in raw_sug][:2]
+                            st.write("---")
+                            st.caption("✨ 요런 건 어때?")
+                            cols = st.columns(len(sugs))
+                            for i, s in enumerate(sugs):
+                                with cols[i]:
+                                    st.button(f"🔍 {s}", on_click=handle_click, args=(s,), key=f"btn_{len(st.session_state.messages)}_{i}")
+                elif response.status_code == 429:
+                    st.warning("🚨 쿼터 초과! 구글이 잠깐 쉬래. 30초만 이따가 다시 눌러줘.")
+                else:
+                    st.error(f"🚨 에러 발생({response.status_code}): {response.text}")
+            
+            # [수정 완료] try 블록에 대응하는 except 블록 확실히 추가!
+            except Exception as e:
+                st.error(f"시스템 오류: {str(e)}")
