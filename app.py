@@ -3,7 +3,7 @@ import requests
 import json
 from PyPDF2 import PdfReader
 
-# 1. 모델 설정 (기본 전제: Gemini 2.5 Flash)
+# 1. 모델 설정 (무조건 2.5 Flash)
 MODEL_NAME = "gemini-2.5-flash"
 
 @st.cache_resource
@@ -51,10 +51,9 @@ if prompt:
     with st.chat_message("assistant", avatar="🧚"):
         def stream_gemini():
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:streamGenerateContent?key={api_key}"
-            # [기강잡기] 추천 질문을 2개로 줄이고 형식을 엄격하게 제한함
             instruction = (
-                f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 답변하되, 핵심만 요약해서 심플하게 답변해줘. "
-                f"답변이 완전히 끝난 후 맨 마지막에만 [Q: 질문] 형식으로 연관 질문 '2개'만 추가해줘. \n\n[규정]\n{rules_text}"
+                f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 핵심만 요약해서 심플하게 답변해줘. "
+                f"답변 후 맨 마지막에만 [Q: 질문] 형식으로 연관 질문 '2개'만 추가해줘. \n\n[규정]\n{rules_text}"
             )
             payload = {"contents": [{"parts": [{"text": f"{instruction}\n\n질문: {prompt}"}]}]}
             
@@ -64,14 +63,17 @@ if prompt:
             for line in response.iter_lines():
                 if line:
                     decoded = line.decode('utf-8').strip()
-                    # 텍스트 추출 로직 강화
-                    if '"text": "' in decoded:
+                    # 스트리밍 응답에서 JSON 데이터만 추출
+                    if decoded.startswith('{'):
                         try:
-                            content = decoded.split('"text": "')[1].split('"')[0].replace("\\n", "\n")
-                            full_text += content
-                            # 실제 답변 내용만 먼저 실시간으로 보여줌
-                            if "[Q:" not in full_text:
-                                yield content
+                            data = json.loads(decoded)
+                            # 계층 구조를 타고 들어가서 텍스트만 추출
+                            if "candidates" in data:
+                                content = data['candidates'][0]['content']['parts'][0]['text']
+                                full_text += content
+                                # 질문 태그 전까지만 화면에 실시간으로 뿌려줌
+                                if "[Q:" not in full_text:
+                                    yield content
                         except:
                             continue
             
@@ -81,12 +83,11 @@ if prompt:
         final_answer = st.write_stream(stream_gemini)
         st.session_state.messages.append({"role": "assistant", "content": final_answer})
 
-        # [최적화] 연관 질문 버튼 생성 (2개로 제한)
+        # 연관 질문 버튼 생성 (2개 제한)
         full_res = st.session_state.get("last_full_response", "")
         if "[Q:" in full_res:
-            # 질문 내용만 깔끔하게 추출
             raw_suggestions = full_res.split("[Q:")[1:]
-            suggestions = [s.split("]")[0].strip() for s in raw_suggestions][:2] # 딱 2개만!
+            suggestions = [s.split("]")[0].strip() for s in raw_suggestions][:2]
             
             if suggestions:
                 st.write("---")
@@ -94,5 +95,4 @@ if prompt:
                 cols = st.columns(len(suggestions))
                 for i, sug in enumerate(suggestions):
                     with cols[i]:
-                        # 버튼 키값에 유니크한 요소 추가해서 충돌 방지
                         st.button(f"🔍 {sug}", on_click=handle_click, args=(sug,), key=f"btn_{len(st.session_state.messages)}_{i}")
