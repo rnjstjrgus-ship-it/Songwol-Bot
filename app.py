@@ -20,7 +20,7 @@ rules_text = load_rules()
 
 # 2. UI 구성
 st.title("🎀 송월 규정 요정")
-st.caption(f"⚡ {MODEL_NAME} 엔진 가동 중")
+st.caption(f"⚡ {MODEL_NAME} 안정화 버전 가동 중")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -49,62 +49,50 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="🧚"):
-        # [핵심] 답변 시작 전 상태 알림 표시
-        status_text = st.empty()
-        status_text.markdown("요정이 규정을 읽고 답변을 생각 중이야... 잠시만! ✨")
-        
-        full_response = ""
-        message_placeholder = st.empty() # 답변이 들어갈 빈 공간
-
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:streamGenerateContent?key={api_key}"
-            instruction = (
-                f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 핵심만 요약해서 심플하게 답변해줘. "
-                f"답변 후 맨 마지막에만 [Q: 질문] 형식으로 연관 질문 2개만 추가해줘. \n\n[규정]\n{rules_text}"
-            )
-            payload = {"contents": [{"parts": [{"text": f"{instruction}\n\n질문: {prompt}"}]}]}
-            
-            response = requests.post(url, json=payload, stream=True)
-            
-            for line in response.iter_lines():
-                if line:
-                    decoded = line.decode('utf-8').strip()
-                    # 스트리밍 JSON에서 텍스트 조각만 추출
-                    if decoded.startswith('{') or '"text":' in decoded:
-                        try:
-                            # 텍스트만 포함된 행인지 확인
-                            if '"text":' in decoded:
-                                content = decoded.split('"text": "')[1].split('"')[0].replace("\\n", "\n")
-                                if content:
-                                    if not full_response: # 첫 글자가 나오면 상태 메시지 삭제
-                                        status_text.empty()
-                                    
-                                    full_response += content
-                                    # 연관 질문 나오기 전까지만 실시간 노출
-                                    display_answer = full_response.split("[Q:")[0]
-                                    message_placeholder.markdown(display_answer + "▌")
-                        except:
-                            continue
-
-            # 최종 답변 확정
-            final_main_answer = full_response.split("[Q:")[0].strip()
-            message_placeholder.markdown(final_main_answer)
-            st.session_state.messages.append({"role": "assistant", "content": final_main_answer})
-            st.session_state.last_full_response = full_response
-
-            # 연관 질문 버튼 생성
-            if "[Q:" in full_response:
-                raw_suggestions = full_response.split("[Q:")[1:]
-                suggestions = [s.split("]")[0].strip() for s in raw_suggestions][:2]
+        # [핵심] 무한 로딩 방지용 스피너 등장!
+        with st.spinner("요정이 규정을 꼼꼼히 읽고 있어... 잠시만 기다려줘! ✨"):
+            try:
+                # 스트리밍 대신 일반 생성 API 사용 (더 안정적임)
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={api_key}"
                 
-                if suggestions:
-                    st.write("---")
-                    st.caption("✨ 궁금해할 것 같아서 준비했어!")
-                    cols = st.columns(2)
-                    for i, sug in enumerate(suggestions):
-                        with cols[i]:
-                            st.button(f"🔍 {sug}", on_click=handle_click, args=(sug,), key=f"btn_{len(st.session_state.messages)}_{i}")
-        
-        except Exception as e:
-            status_text.empty()
-            st.error(f"으악! 통신 중에 문제가 생겼어: {str(e)}")
+                instruction = (
+                    f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 핵심만 요약해서 심플하게 답변해줘. "
+                    f"답변 후 맨 마지막에만 [Q: 질문] 형식으로 연관 질문 2개만 추가해줘. \n\n[규정]\n{rules_text}"
+                )
+                
+                payload = {
+                    "contents": [{"parts": [{"text": f"{instruction}\n\n질문: {prompt}"}]}]
+                }
+                
+                response = requests.post(url, json=payload)
+                res_json = response.json()
+                
+                if "candidates" in res_json:
+                    full_response = res_json['candidates'][0]['content']['parts'][0]['text']
+                    
+                    # 답변과 추천 질문 분리
+                    if "[Q:" in full_response:
+                        main_answer = full_response.split("[Q:")[0].strip()
+                        raw_suggestions = full_response.split("[Q:")[1:]
+                        suggestions = [s.split("]")[0].strip() for s in raw_suggestions][:2]
+                    else:
+                        main_answer = full_response
+                        suggestions = []
+
+                    # 답변 출력
+                    st.markdown(main_answer)
+                    st.session_state.messages.append({"role": "assistant", "content": main_answer})
+
+                    # 연관 질문 버튼
+                    if suggestions:
+                        st.write("---")
+                        st.caption("✨ 이런 것도 궁금할 것 같아!")
+                        cols = st.columns(2)
+                        for i, sug in enumerate(suggestions):
+                            with cols[i]:
+                                st.button(f"🔍 {sug}", on_click=handle_click, args=(sug,), key=f"btn_{len(st.session_state.messages)}_{i}")
+                else:
+                    st.error("구글 서버가 대답을 못 하고 있어. 잠시 후 다시 시도해줘!")
+                    
+            except Exception as e:
+                st.error(f"으악! 에러가 났어: {str(e)}")
