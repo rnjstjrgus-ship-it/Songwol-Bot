@@ -19,8 +19,8 @@ api_key = st.secrets.get("GEMINI_API_KEY")
 rules_text = load_rules()
 
 # 2. UI 구성
-st.title("🎀 송월 규정 요정")
-st.caption(f"⚡ {MODEL_NAME} 스트리밍 모드 가동 중")
+st.title("🎀 송월 규정 요정 (Light Edition)")
+st.caption(f"⚡ {MODEL_NAME} 최적화 모드 가동 중")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -49,13 +49,12 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="🧚"):
-        # [핵심] 스트리밍 데이터를 실시간으로 받아내는 생성기 함수
         def stream_gemini():
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:streamGenerateContent?key={api_key}"
+            # [기강잡기] 추천 질문을 2개로 줄이고 형식을 엄격하게 제한함
             instruction = (
-                f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 답변하되, "
-                f"원문을 그대로 나열하지 말고 핵심만 요약해서 심플하게 답변해줘. "
-                f"답변 끝에는 반드시 [Q: 질문] 형식으로 연관 질문 3개를 달아줘. \n\n[규정]\n{rules_text}"
+                f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 답변하되, 핵심만 요약해서 심플하게 답변해줘. "
+                f"답변이 완전히 끝난 후 맨 마지막에만 [Q: 질문] 형식으로 연관 질문 '2개'만 추가해줘. \n\n[규정]\n{rules_text}"
             )
             payload = {"contents": [{"parts": [{"text": f"{instruction}\n\n질문: {prompt}"}]}]}
             
@@ -65,29 +64,35 @@ if prompt:
             for line in response.iter_lines():
                 if line:
                     decoded = line.decode('utf-8').strip()
-                    if decoded.startswith('"text": "'):
-                        # 텍스트 데이터만 쏙 골라내기
-                        content = decoded.split('"text": "')[1].split('"')[0].replace("\\n", "\n")
-                        full_text += content
-                        # 추천 질문 태그 전까지만 화면에 실시간 노출
-                        if "[Q:" not in full_text:
-                            yield content
+                    # 텍스트 추출 로직 강화
+                    if '"text": "' in decoded:
+                        try:
+                            content = decoded.split('"text": "')[1].split('"')[0].replace("\\n", "\n")
+                            full_text += content
+                            # 실제 답변 내용만 먼저 실시간으로 보여줌
+                            if "[Q:" not in full_text:
+                                yield content
+                        except:
+                            continue
             
-            # 마지막에 추천 질문 파싱을 위해 전체 텍스트 저장용
             st.session_state.last_full_response = full_text
 
-        # 스트리밍 출력 실행
+        # 스트리밍 출력
         final_answer = st.write_stream(stream_gemini)
         st.session_state.messages.append({"role": "assistant", "content": final_answer})
 
-        # 연관 질문 버튼 생성 (답변 완료 후)
+        # [최적화] 연관 질문 버튼 생성 (2개로 제한)
         full_res = st.session_state.get("last_full_response", "")
         if "[Q:" in full_res:
-            suggestions = [p.split("]")[0].strip() for p in full_res.split("[Q:")[1:]]
+            # 질문 내용만 깔끔하게 추출
+            raw_suggestions = full_res.split("[Q:")[1:]
+            suggestions = [s.split("]")[0].strip() for s in raw_suggestions][:2] # 딱 2개만!
+            
             if suggestions:
                 st.write("---")
-                st.caption("✨ 요정의 추천 질문!")
+                st.caption("✨ 요런 건 어때?")
                 cols = st.columns(len(suggestions))
                 for i, sug in enumerate(suggestions):
                     with cols[i]:
+                        # 버튼 키값에 유니크한 요소 추가해서 충돌 방지
                         st.button(f"🔍 {sug}", on_click=handle_click, args=(sug,), key=f"btn_{len(st.session_state.messages)}_{i}")
