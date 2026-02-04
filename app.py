@@ -3,7 +3,7 @@ import requests
 import json
 from PyPDF2 import PdfReader
 
-# 1. 모델 설정
+# 1. 모델 설정 (1.5 Flash - 안정성 최우선)
 MODEL_NAME = "gemini-1.5-flash" 
 
 @st.cache_resource
@@ -49,13 +49,16 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="🧚"):
-        with st.spinner(f"요정이 답변을 요약 중이야... ✨"):
+        with st.spinner(f"요정이 답변을 준비 중이야... ✨"):
             try:
+                # API 호출 URL (v1beta)
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={api_key}"
+                
                 instruction = (
                     f"너는 사내 규정 전문가야. 아래 규정을 바탕으로 핵심만 요약해서 답변해줘. "
                     f"답변 끝에는 반드시 [Q: 질문] 형식으로 연관 질문 2개를 추가해줘. \n\n[규정]\n{rules_text}"
                 )
+                
                 payload = {"contents": [{"parts": [{"text": f"{instruction}\n\n질문: {prompt}"}]}]}
                 
                 response = requests.post(url, json=payload)
@@ -64,15 +67,28 @@ if prompt:
                     res_json = response.json()
                     if "candidates" in res_json:
                         full_res = res_json['candidates'][0]['content']['parts'][0]['text']
-                        main_answer = full_res.split("[Q:")[0].strip()
                         
+                        # 답변과 추천 질문 분리
+                        main_answer = full_res.split("[Q:")[0].strip()
                         st.markdown(main_answer)
                         st.session_state.messages.append({"role": "assistant", "content": main_answer})
                         
-                        # 추천 질문 버튼 생성 (괄호 버그 수정 완료!)
+                        # 추천 질문 버튼 생성 (여기 에러 완벽 수정!)
                         if "[Q:" in full_res:
                             raw_sug = full_res.split("[Q:")[1:]
                             sugs = [s.split("]")[0].strip() for s in raw_sug][:2]
+                            
                             st.write("---")
                             st.caption("✨ 요런 건 어때?")
-                            cols = st.
+                            cols = st.columns(len(sugs)) # 컬럼 생성 부분 수정
+                            for i, s in enumerate(sugs):
+                                with cols[i]:
+                                    st.button(f"🔍 {s}", on_click=handle_click, args=(s,), key=f"btn_{len(st.session_state.messages)}_{i}")
+                
+                elif response.status_code == 429:
+                    st.warning("🚨 1분 사용량 초과! 30초만 쉬었다가 다시 해줘.")
+                else:
+                    st.error(f"🚨 에러 발생({response.status_code}): {response.text}")
+                    
+            except Exception as e:
+                st.error(f"시스템 오류: {str(e)}")
